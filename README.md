@@ -1,3 +1,9 @@
+# 100% vibe coded with Claude Opus
+
+There is no guarantee that the quest list is complete or completely correct. Information sourced from Project Gorgon API and Project Gorgon wiki.
+
+Requires VIP to export player data.
+
 # Zhia Lian Quest Browser
 
 A small Python web app for Project Gorgon's Zhia Lian Halloween event. It reads the
