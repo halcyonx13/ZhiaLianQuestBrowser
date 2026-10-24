@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zhia Lian Quest Browser</title>
+  <meta name="description" content="Browse every quest, questline and reward in Project Gorgon's Zhia Lian Halloween event.">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg', v=app_version) }}" type="image/svg+xml">
+  <link rel="preload" href="{{ url_for('static', filename='fonts/alegreya-sans-latin-400-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/pirata-one-latin-400-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=app_version) }}">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="brand">
+      <h1>Zhia Lian Quest Browser</h1>
+      <p class="sub" id="dataline">Project Gorgon's Halloween event</p>
+    </div>
+    <div class="favour" id="favour" aria-live="polite">
+      <p class="favour-num" id="favour-num" hidden><span id="favour-value">0</span><span class="favour-level" id="favour-level"></span></p>
+      <p class="favour-label" id="favour-label">Import a player file to see your Zhia Lian favour</p>
+    </div>
+    <div class="progress" id="progress" aria-live="polite">
+      <div class="progress-text"><strong id="done-count">0</strong> of <span id="total-count">0</span> quests done<span id="journal-note"></span></div>
+      <div class="progress-bar" role="progressbar" aria-label="Quests done" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="progress-fill"></span></div>
+      <p class="import-note" id="import-note" hidden></p>
+    </div>
+    <div class="top-tools">
+      <button type="button" class="btn ghost load-export" id="load-export" title="Mark quests and show your favour from a Project Gorgon player file (Character_….json)">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5z"/><path d="M12 2.5V6h3.5"/><path d="M10 9.5v5M7.8 12.3 10 14.5l2.2-2.2"/></svg>
+        <span>Import player file</span>
+      </button>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+      <label class="search">
+        <span class="visually-hidden">Search quests</span>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4.5 4.5"/></svg>
+        <input id="search" type="search" placeholder="Search quests, places, rewards" autocomplete="off">
+      </label>
+      <details class="menu">
+        <summary aria-label="More options">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="16" cy="10" r="1.6"/></svg>
+        </summary>
+        <div class="menu-panel">
+          <button type="button" id="menu-load-export">Import player file</button>
+          <button type="button" id="check-updates">Check for game data updates</button>
+          <button type="button" id="redownload">Download all game data again</button>
+          <hr>
+          <button type="button" id="export-progress">Copy my progress</button>
+          <button type="button" id="import-progress">Paste progress</button>
+          <button type="button" id="reset-progress" class="danger">Reset all progress</button>
+          <p class="menu-note">Ticks are saved in this browser only.</p>
+        </div>
+      </details>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button role="tab" id="tab-questline" aria-controls="view-questline" data-tab="questline">Questlines</button>
+      <button role="tab" id="tab-npc" aria-controls="view-npc" data-tab="npc">By NPC</button>
+      <button role="tab" id="tab-region" aria-controls="view-region" data-tab="region">By region</button>
+      <button role="tab" id="tab-rewards" aria-controls="view-rewards" data-tab="rewards">Rewards &amp; items</button>
+    </nav>
+    <div class="watch" id="watch" hidden>
+      <div class="watch-line">
+        <label class="watch-toggle"><input type="checkbox" id="watch-toggle"><span id="watch-label">Watch for updates</span></label>
+        <span class="watch-state" id="watch-state" aria-live="polite"></span>
+        <button type="button" class="btn ghost watch-recheck" id="watch-recheck">Force recheck</button>
+      </div>
+      <p class="watch-note" id="watch-note">“Automatically export on logout” checkbox should be ticked (Settings → VIP)</p>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="status-msg" class="status-msg">
+      <p>Loading game data. The first run downloads the quest files from the Project Gorgon CDN, which can take a few seconds.</p>
+    </div>
+
+    <section id="view-questline" class="view" role="tabpanel" aria-labelledby="tab-questline" hidden>
+      <div class="ql-head">
+        <div class="chain-picker" id="chain-picker" role="radiogroup" aria-label="Questline"></div>
+        <p class="chain-blurb" id="chain-blurb"></p>
+      </div>
+      <div class="ql-stage" id="ql-stage">
+        <svg id="ql-svg" role="group" aria-label="Questline map">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrow-vine"/></marker>
+            <marker id="arrow-offered" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrow-offered"/></marker>
+            <marker id="arrow-completes" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrow-completes"/></marker>
+          </defs>
+          <g id="ql-world"><g id="ql-edges"></g><g id="ql-nodes"></g></g>
+        </svg>
+        <div class="ql-tools">
+          <button type="button" id="ql-zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" id="ql-zoom-out" aria-label="Zoom out">&minus;</button>
+          <button type="button" id="ql-fit">Fit</button>
+          <label class="toggle"><input type="checkbox" id="ql-next"> Show my next steps</label>
+        </div>
+      </div>
+      <div class="ql-foot">
+        <div class="ql-legend" aria-label="Legend">
+          <span><i class="sw sw-available"></i>Available</span>
+          <span><i class="sw sw-active"></i>In your journal</span>
+          <span><i class="sw sw-done"></i>Done</span>
+          <span><i class="lg lg-follow"></i>Finishing unlocks</span>
+          <span><i class="lg lg-req"></i>Needs every link finished</span>
+          <span><i class="lg lg-offered"></i>Offered once assigned</span>
+          <span><i class="lg lg-completes"></i>Counts toward</span>
+        </div>
+        <p class="ql-help">Drag to pan, scroll to zoom. Click a quest for details, or its seal to mark it done.</p>
+      </div>
+    </section>
+
+    <section id="view-npc" class="view split" role="tabpanel" aria-labelledby="tab-npc" hidden>
+      <aside class="side" aria-label="NPCs"><ul class="side-list" id="npc-list"></ul></aside>
+      <div class="pane" id="npc-pane"></div>
+    </section>
+
+    <section id="view-region" class="view split" role="tabpanel" aria-labelledby="tab-region" hidden>
+      <aside class="side" aria-label="Regions"><ul class="side-list" id="region-list"></ul></aside>
+      <div class="pane" id="region-pane"></div>
+    </section>
+
+
+    <section id="view-rewards" class="view" role="tabpanel" aria-labelledby="tab-rewards" hidden>
+      <div class="rewards" id="rewards"></div>
+    </section>
+  </main>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="drop-zone" id="drop-zone" hidden><p>Drop your player file to import it</p></div>
+
+  <dialog class="dialog" id="import-dialog" aria-labelledby="import-title">
+    <form method="dialog" class="dialog-form" id="import-form">
+      <h2 id="import-title">Import player file</h2>
+      <div id="import-body"></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn ghost" id="import-cancel">Cancel</button>
+        <button type="submit" class="btn" id="import-apply" autofocus>Mark these quests</button>
+      </div>
+    </form>
+  </dialog>
+  <aside class="drawer" id="drawer" aria-label="Quest details" aria-hidden="true" tabindex="-1">
+    <button type="button" class="drawer-close" id="drawer-close" aria-label="Close details">&times;</button>
+    <div id="drawer-body"></div>
+  </aside>
+
+  <footer class="foot">
+    <p id="credit">Some portions copyright 2026 Elder Game, LLC.</p>
+    <p>Quest data from the official Project Gorgon CDN. Extra notes from the <a href="https://wiki.projectgorgon.com/wiki/Halloween_2024" target="_blank" rel="noopener">Project Gorgon wiki</a>.</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='app.js', v=app_version) }}"></script>
+</body>
+</html>

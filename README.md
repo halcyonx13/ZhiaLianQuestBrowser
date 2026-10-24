@@ -1,20 +1,14 @@
-# 100% vibe coded with Claude Opus
-
-There is no guarantee that the quest list is complete or completely correct. Information sourced from Project Gorgon API and Project Gorgon wiki.
-
-Requires VIP to export player data.
-
 # Zhia Lian Quest Browser
 
 A small Python web app for Project Gorgon's Zhia Lian Halloween event. It reads the
 official game data from the Project Gorgon CDN and shows:
 
+- **Questlines** (the first tab): an interactive map of how the quests chain together.
+  Click a quest's seal to mark it done; the map shows what that unlocks.
 - **By NPC**: every quest grouped by who gives it (Zhia Lian, Brandon Mellus, the Bat in
   the Hat, the cursed cultists and so on), plus the quests each NPC appears in.
 - **By region**: quests grouped by overworld region, with the specific spot where the
   data names one (Serbule Crypt, Borghild, the ruined Kur Tower, Gazluk Keep...).
-- **Questlines**: an interactive map of how the quests chain together. Click a quest's
-  seal to mark it done; the map shows what that unlocks.
 - **Rewards & items**: titles, event hats and masks, abilities, recipes, Zhia's
   blessings, candy, keys, a table of every quest reward, and the recipes the quests
   ask you to craft.
@@ -23,14 +17,17 @@ Progress is saved in your browser (localStorage), so it survives reloads and new
 versions. The menu next to the search box can copy your progress to another browser
 or reset it for next year's event.
 
-## Load your character export
+## Import your player file
 
-Click **Load character export** (or drop the file anywhere on the page) and choose the
+Click **Import player file** (or drop the file anywhere on the page) and choose the
 `Character_<name>_<server>.json` file the game saved. The app shows what it found before
 changing anything:
 
+- **Zhia Lian favour** appears in large type in the header, with your favour level,
+  from `NPCs` → `NPC_ZhiaLian` → `Favor` in the file. Until you import a file the header
+  says "Import a player file to see your Zhia Lian favour".
 - Event quests in your `ActiveQuests` list show as **In journal**.
-- The export doesn't list finished event quests, because they repeat every year, so the
+- The file doesn't list finished event quests, because they repeat every year, so the
   app works them out from the quest chain in two ways:
   1. **From what had to come before.** If a quest is in your journal, everything it needs
      was reached; anything reached that isn't in your journal any more is finished. When
@@ -41,8 +38,39 @@ changing anything:
 - Your other ticks stay unless you choose **Clear my other ticks first**. Quests that are
   back in your journal lose their tick, since they're in progress again.
 
-With the example export (Lacrimosa on Dreva), that's 17 quests in the journal and 24
+With the example file (Lacrimosa on Dreva), that's 17 quests in the journal and 24
 finished: 21 from the first method and 3 more from the second.
+
+## Watch your player file for updates
+
+The game can write a fresh player file every time you log out. Turn this on in game:
+"Automatically export on logout" checkbox should be ticked (Settings -> VIP).
+
+The first time you import a file, the dialog asks whether to **watch it for updates**.
+When watching:
+
+- The header says **Watching Character_Lacrimosa_Dreva.json** and when it last checked.
+- The app checks the file every 15 seconds. When the game saves it again, every open page
+  updates its ticks and favour by itself and says what changed, the same way the first
+  import worked (including your follow-ups choice).
+- **Force recheck** reads the file straight away.
+- The checkbox in the header turns watching off and on again. The app remembers what it
+  watches, even after you close and restart it.
+- Other devices on your network pick up the same updates, even ones that never imported
+  a file.
+
+How the app finds the file: your browser can't tell it where an uploaded file came from,
+so the app looks for a file with the same name in Project Gorgon's Reports folder on the
+computer it runs on:
+
+- Windows: `%USERPROFILE%\AppData\LocalLow\Elder Game\Project Gorgon\Reports`, then
+  `Documents\Project Gorgon Data\Reports`
+- Linux: `~/.config/unity3d/Elder Game/Project Gorgon/Reports`
+- macOS: `~/Library/Application Support/Elder Game/Project Gorgon/Reports`
+
+If it isn't there, the dialog lets you paste where the file is. For safety, that only
+works from the computer running the app (http://localhost/), and the app only ever reads
+files that are Project Gorgon player files. `ZHIA_REPORTS_DIR` adds another folder to look in.
 
 ## Run it
 
@@ -79,7 +107,7 @@ Good to know:
   phone or another PC; with `--localhostonly` it never asks.
 - **Each address keeps its own ticks.** Browsers store your ticks per address, so
   `http://localhost/` and `http://192.168.1.20/` (or another port) each start empty.
-  Load your character export on each device, or use *Copy my progress* and
+  Import your player file on each device (or watch it), or use *Copy my progress* and
   *Paste progress* in the menu.
 
 ## Game data
@@ -95,7 +123,8 @@ Good to know:
   works even with no internet on the very first run.
 
 The data folder is `%LOCALAPPDATA%\ZhiaLianQuestBrowser` for the EXE, and the project
-folder when running from source. Game icons are cached there as you view them.
+folder when running from source. Game icons are cached there as you view them, and
+`settings.json` there remembers which player file is watched.
 
 Environment variables, all optional: `ZHIA_DATA_DIR` (data folder), `ZHIA_CHECK_MINUTES`
 (how often to look for new data, default 30), and `PORT`, `HOST` and `ZHIA_NO_BROWSER=1`,
@@ -133,7 +162,8 @@ antivirus tools also flag PyInstaller apps by mistake. Building it yourself with
 | `gorgon.py` | Reads the data version, downloads and caches the 13 JSON files it needs, rejects the CDN's "missing file" HTML pages. |
 | `zhia.py` | Builds the event model: finds the event quests, works out givers, regions, links between quests, rewards, titles and event items. |
 | `curated.py` | The few facts the data doesn't encode, taken from the wiki: Brandon's "offered once assigned" links, where he stands for the beer quests, short NPC notes, and the place names used to find regions. |
-| `app.py` | Flask app and launcher. Serves the page, `/api/event` (gzip, ETag from a hash of the content), `/api/refresh`, `/api/status` and `/icon/N.png`; picks live, cached or snapshot data; reads the command-line options; opens the browser. |
+| `app.py` | Flask app and launcher. Serves the page, `/api/event` (gzip, ETag from a hash of the content), `/api/refresh`, `/api/status`, `/api/player…` and `/icon/N.png`; picks live, cached or snapshot data; reads the command-line options; opens the browser. |
+| `player.py` | Finds and watches the player file: looks in the Reports folders, checks it every 15 seconds, keeps a small summary (favour, export time, quest names). |
 | `static/`, `templates/` | The front end, plain JavaScript with no build step. Fonts are bundled in `static/fonts` (SIL Open Font License). |
 | `build.py`, `build_exe.bat`, `packaging/` | The Windows EXE build: data snapshot, PyInstaller settings, app icon. |
 

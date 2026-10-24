@@ -25,11 +25,12 @@ from pathlib import Path
 from flask import Flask, Response, render_template, request, send_file
 
 from gorgon import DataUnavailable, GorgonData, version_key
+from player import PlayerWatch, default_folder
 from zhia import build_model
 
 APP_NAME = "ZhiaLianQuestBrowser"
 APP_TITLE = "Zhia Lian Quest Browser"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 FROZEN = getattr(sys, "frozen", False)
 
 # Read-only files (templates, static, snapshot) live next to this file, or
@@ -57,9 +58,10 @@ DEFAULT_PORT = 80
 
 app = Flask(__name__, template_folder=str(RES_DIR / "templates"), static_folder=str(RES_DIR / "static"))
 gorgon = GorgonData(CACHE_DIR)
+watch = PlayerWatch(DATA_DIR / "settings.json")
 _lock = threading.Lock()
 _state: dict = {"body": None, "gz": None, "etag": None, "checked": 0.0,
-                "version": None, "source": None, "live": False}
+                "version": None, "source": None, "live": False, "quest_ids": None}
 
 
 # ---------------------------------------------------------------- data
@@ -117,6 +119,7 @@ def _install(model: dict) -> None:
     ev = model["event"]
     body = json.dumps(model, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     _state.update(
+        quest_ids=frozenset(q["id"] for q in model["quests"]),
         version=ev["version"], source=ev.get("source"), live=ev.get("live"),
         body=body, gz=gzip.compress(body, 6),
         etag='"' + hashlib.sha1(body).hexdigest()[:24] + '"',  # tag by content, not version
@@ -213,6 +216,101 @@ def api_status():
     """Cheap, lock-free: what data is in use and how a running download is going."""
     return {"version": _state["version"], "source": _state["source"], "live": _state["live"],
             "checked": _state["checked"], "download": dict(gorgon.progress)}
+
+
+# ---------------------------------------------------------------- player file
+_own_addresses: set = set()
+
+
+def _is_local() -> bool:
+    """True when the request comes from this computer, not another device on the network."""
+    ip = (request.remote_addr or "").removeprefix("::ffff:")
+    if ip.startswith("127.") or ip == "::1":
+        return True
+    if not _own_addresses:
+        _own_addresses.update(_lan_addresses())
+    return ip in _own_addresses
+
+
+def _json_body():
+    # Requiring application/json keeps other web sites from posting here.
+    if not request.is_json:
+        return None
+    body = request.get_json(silent=True)
+    return body if isinstance(body, dict) else None
+
+
+def _player_status() -> dict:
+    return watch.status(_state["quest_ids"], local=_is_local())
+
+
+def _reply(data, status=200):
+    return Response(json.dumps(data), status=status, mimetype="application/json",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/player")
+def api_player():
+    return _reply(_player_status())
+
+
+@app.post("/api/player/locate")
+def api_player_locate():
+    """Can the app find (and so watch) the player file the page just imported?"""
+    body = _json_body()
+    if body is None:
+        return _reply({"error": "Send the file name as JSON."}, 400)
+    name = os.path.basename(str(body.get("file") or ""))
+    path, exp = watch.locate(name, str(body.get("character") or ""), str(body.get("server") or ""))
+    local = _is_local()
+    st = _player_status()
+    return _reply({
+        "found": bool(path),
+        "file": name,
+        "path": str(path) if (path and local) else None,
+        "timestamp": exp["timestamp"] if exp else None,
+        "folder": str(default_folder()) if local else None,
+        "canSetPath": local,
+        "watchingThis": bool(st["enabled"] and st["file"] and st["file"].lower() == name.lower()
+                             and (not path or (st["path"] is None) or st["path"] == str(path))),
+        "watchingOther": st["file"] if (st["enabled"] and st["file"] and st["file"].lower() != name.lower()) else None,
+    })
+
+
+@app.post("/api/player/watch")
+def api_player_watch():
+    """Turn watching on or off, or choose the file to watch."""
+    body = _json_body()
+    if body is None:
+        return _reply({"error": "Send the settings as JSON."}, 400)
+    try:
+        if body.get("path"):
+            if not _is_local():
+                return _reply({"error": "Choose where the file is from the computer running the app "
+                                        "(open http://localhost/ there)."}, 403)
+            watch.configure(body["path"])
+        elif body.get("file"):
+            path, _exp = watch.locate(str(body["file"]), str(body.get("character") or ""),
+                                      str(body.get("server") or ""))
+            if not path:
+                return _reply({"error": f"Couldn't find {os.path.basename(str(body['file']))} in "
+                                        "Project Gorgon's Reports folder."}, 404)
+            watch.configure(path)
+        if "enabled" in body:
+            watch.set_enabled(bool(body["enabled"]))
+    except ValueError as exc:
+        return _reply({"error": str(exc)}, 400)
+    return _reply(_player_status())
+
+
+@app.post("/api/player/recheck")
+def api_player_recheck():
+    if _json_body() is None:
+        return _reply({"error": "Send an empty JSON object."}, 400)
+    if not watch.path:
+        return _reply({"error": "Import a player file first."}, 400)
+    watch.check(force=True)
+    return _reply(_player_status())
 
 
 @app.get("/icon/<int:icon_id>.png")
@@ -374,6 +472,11 @@ def main(argv=None):
     print("\n  " + "\n  ".join(lines) + "\n", flush=True)
 
     threading.Thread(target=_warm, daemon=True).start()
+    if watch.path:
+        print(f"  {'Watching' if watch.enabled else 'Not watching'} {watch.path}\n", flush=True)
+        watch.start()
+        if watch.enabled:
+            watch.check()
     if opts["browser"]:
         threading.Timer(1.2, webbrowser.open, args=[local_url]).start()
     try:
