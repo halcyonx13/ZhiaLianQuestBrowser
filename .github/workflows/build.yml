@@ -1,0 +1,112 @@
+# Builds the app for Apple Silicon Macs, Intel Macs and Windows on GitHub's
+# own machines, tests each one on its real system, and puts them in a draft
+# release for the version in app.py. A release that's already published is
+# never changed.
+name: Build apps
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["README.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Mac (Apple Silicon)
+            os: macos-15
+            asset: mac-apple-silicon
+          - label: Mac (Intel)
+            os: macos-15-intel
+            asset: mac-intel
+          - label: Windows
+            os: windows-latest
+            asset: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: python -m pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Build (with today's game data built in)
+        run: python build.py
+
+      - name: Test on this system
+        run: python packaging/ci_smoke_test.py
+
+      - name: Package for the Mac
+        if: runner.os == 'macOS'
+        run: |
+          VER=$(python build.py --print-version)
+          # ditto keeps the "can be run" permission, which a plain upload would lose
+          ditto -c -k --keepParent dist/ZhiaLianQuestBrowser "dist/ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip"
+          echo "FILE=dist/ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip" >> "$GITHUB_ENV"
+
+      - name: Package for Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ver = python build.py --print-version
+          Copy-Item dist\ZhiaLianQuestBrowser.exe "dist\ZhiaLianQuestBrowser$ver.exe"
+          "FILE=dist/ZhiaLianQuestBrowser$ver.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ env.FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Draft release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Put the files in the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          VER=$(python3 build.py --print-version)
+          TAG="v$VER"
+          found=$(gh api "repos/$GH_REPO/releases?per_page=100" \
+                  --jq ".[] | select(.tag_name == \"$TAG\") | \"\(.id) \(.draft)\"" | head -n 1)
+          if [ -n "$found" ]; then
+            if [ "${found#* }" = "false" ]; then
+              echo "::notice title=Release::$TAG is already published, so it was left as it is. This run's files are under Artifacts on the run page."
+              exit 0
+            fi
+            gh api -X DELETE "repos/$GH_REPO/releases/${found% *}" > /dev/null
+          fi
+          sed -e "s/{version}/$VER/g" -e "s/{commit}/${GITHUB_SHA:0:7}/g" -e "s|{branch}|$GITHUB_REF_NAME|g" \
+              packaging/release_notes.md > notes.md
+          gh release create "$TAG" out/* --draft --target "$GITHUB_SHA" \
+             --title "zhia-lian-quest-browser-$VER" --notes-file notes.md
+          echo "::notice title=Release::Draft $TAG now holds: $(ls out | tr '\n' ' ')"

@@ -30,7 +30,7 @@ from zhia import build_model
 
 APP_NAME = "ZhiaLianQuestBrowser"
 APP_TITLE = "Zhia Lian Quest Browser"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 FROZEN = getattr(sys, "frozen", False)
 
 # Read-only files (templates, static, snapshot) live next to this file, or
@@ -39,12 +39,22 @@ RES_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
 
 def _data_dir() -> Path:
-    """Writable folder for the download cache: %LOCALAPPDATA% when frozen."""
+    """Writable folder for the download cache and settings.
+
+    Packaged app: %LOCALAPPDATA% on Windows, ~/Library/Application Support on
+    a Mac, ~/.local/share elsewhere. From source: the project folder.
+    """
     if os.environ.get("ZHIA_DATA_DIR"):
         return Path(os.environ["ZHIA_DATA_DIR"])
     if FROZEN:
-        base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
-        return Path(base) / APP_NAME
+        home = Path.home()
+        if os.name == "nt":
+            base = Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
+        elif sys.platform == "darwin":
+            base = home / "Library" / "Application Support"
+        else:
+            base = Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share")
+        return base / APP_NAME
     return Path(__file__).resolve().parent
 
 
@@ -448,6 +458,9 @@ def main(argv=None):
             ctypes.windll.kernel32.SetConsoleTitleW(APP_TITLE)
         except Exception:
             pass
+    elif sys.stdout and sys.stdout.isatty():  # Terminal window title on a Mac or Linux
+        sys.stdout.write(f"\033]0;{APP_TITLE}\007")
+        sys.stdout.flush()
 
     local_url = _url("localhost", port)
     if _is_ours(port):  # already running: just bring the page up again
@@ -468,7 +481,8 @@ def main(argv=None):
             lines.append("From other devices on your network: " + ", ".join(_url(a, port) for a in lan))
     else:
         lines.append("Only this computer can connect (--localhostonly).")
-    lines += [f"Data folder: {DATA_DIR}", "Close this window to quit."]
+    lines += [f"Data folder: {DATA_DIR}",
+              "Close this window to quit." if os.name == "nt" else "Close this window or press Ctrl+C to quit."]
     print("\n  " + "\n  ".join(lines) + "\n", flush=True)
 
     threading.Thread(target=_warm, daemon=True).start()
@@ -480,10 +494,14 @@ def main(argv=None):
     if opts["browser"]:
         threading.Timer(1.2, webbrowser.open, args=[local_url]).start()
     try:
-        from waitress import serve
-        serve(app, host=host, port=port, threads=8, ident=APP_NAME)
-    except ImportError:  # running from source without waitress installed
-        app.run(host=host, port=port, debug=False, threaded=True)
+        try:
+            from waitress import serve
+        except ImportError:  # running from source without waitress installed
+            app.run(host=host, port=port, debug=False, threaded=True)
+        else:
+            serve(app, host=host, port=port, threads=8, ident=APP_NAME)
+    except KeyboardInterrupt:
+        print("\n  Stopped.\n", flush=True)
 
 
 if __name__ == "__main__":
