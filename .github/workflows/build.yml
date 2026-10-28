@@ -55,13 +55,10 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           VER=$(python build.py --print-version)
-          # ditto keeps the "can be run" permission, which a plain upload would lose.
-          # Zipping from inside dist/ puts the app at the top of the zip.
-          (cd dist && ditto -c -k --keepParent ZhiaLianQuestBrowser "ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip")
-          if [ "$(unzip -Z1 "dist/ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip")" != "ZhiaLianQuestBrowser" ]; then
-            echo "::error title=Package::The zip should hold just ZhiaLianQuestBrowser at the top."; exit 1
-          fi
-          echo "FILE=dist/ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip" >> "$GITHUB_ENV"
+          ZIP="dist/ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip"
+          # Keeps the "can be run" mark, which a plain upload would lose, and checks the layout
+          python packaging/zip_app.py dist/ZhiaLianQuestBrowser "$ZIP"
+          echo "FILE=$ZIP" >> "$GITHUB_ENV"
 
       - name: Package for Windows
         if: runner.os == 'Windows'
