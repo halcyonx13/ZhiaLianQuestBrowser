@@ -36,9 +36,9 @@ jobs:
             os: windows-latest
             asset: windows
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -55,8 +55,12 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           VER=$(python build.py --print-version)
-          # ditto keeps the "can be run" permission, which a plain upload would lose
-          ditto -c -k --keepParent dist/ZhiaLianQuestBrowser "dist/ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip"
+          # ditto keeps the "can be run" permission, which a plain upload would lose.
+          # Zipping from inside dist/ puts the app at the top of the zip.
+          (cd dist && ditto -c -k --keepParent ZhiaLianQuestBrowser "ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip")
+          if [ "$(unzip -Z1 "dist/ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip")" != "ZhiaLianQuestBrowser" ]; then
+            echo "::error title=Package::The zip should hold just ZhiaLianQuestBrowser at the top."; exit 1
+          fi
           echo "FILE=dist/ZhiaLianQuestBrowser-$VER-${{ matrix.asset }}.zip" >> "$GITHUB_ENV"
 
       - name: Package for Windows
@@ -67,7 +71,7 @@ jobs:
           Copy-Item dist\ZhiaLianQuestBrowser.exe "dist\ZhiaLianQuestBrowser$ver.exe"
           "FILE=dist/ZhiaLianQuestBrowser$ver.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.asset }}
           path: ${{ env.FILE }}
@@ -81,9 +85,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: out
           merge-multiple: true

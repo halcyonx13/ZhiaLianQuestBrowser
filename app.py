@@ -413,6 +413,10 @@ def _bind_problem(host: str, port: int):
             s.bind((host, port))
             return None
         except PermissionError:
+            if os.name == "nt":  # Windows says "access denied" when a service holds or reserves the port
+                return (f"Windows won't let the app use port {port}. Usually another program or Windows "
+                        f"service already uses it (for example IIS or another web server), or Windows "
+                        f"has reserved it.\nStart the app with a different port, for example: --port:8080")
             return (f"This computer won't let the app use port {port} without administrator rights.\n"
                     f"Start it with a higher port instead, for example: --port:8080")
         except OSError:
