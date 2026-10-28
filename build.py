@@ -1,13 +1,19 @@
-"""Build a standalone ZhiaLianQuestBrowser.exe with PyInstaller.
+"""Build the standalone app with PyInstaller, for the system it runs on.
 
-On Windows the easy way is to double-click build_exe.bat, which sets up a
-virtual environment and runs this script. To run it by hand:
+PyInstaller can't build for another system, so build the Windows EXE on
+Windows and the Mac app on a Mac (or let GitHub do both: see
+.github/workflows/build.yml).
+
+The easy way is to double-click build_exe.bat on Windows or
+build_mac.command on a Mac. Each sets up a virtual environment and runs
+this script. To run it by hand:
 
     pip install -r requirements.txt -r requirements-build.txt
-    python build.py                 # bundle today's game data, then build the EXE
-    python build.py --no-snapshot   # smaller EXE; needs internet on its first run
+    python build.py                 # bundle today's game data, then build
+    python build.py --no-snapshot   # smaller; needs internet on its first run
 
-Output: dist/ZhiaLianQuestBrowser.exe
+Output: dist/ZhiaLianQuestBrowser.exe on Windows, dist/ZhiaLianQuestBrowser
+on a Mac (a program that opens in Terminal when double-clicked).
 
 The snapshot step saves the built quest model (about 50 KB compressed) and
 every icon it uses into snapshot/, so the EXE works offline from the first
@@ -30,6 +36,7 @@ ROOT = Path(__file__).resolve().parent
 SNAPSHOT = ROOT / "snapshot"
 BUILD = ROOT / "build"
 NAME = "ZhiaLianQuestBrowser"
+WINDOWS = sys.platform == "win32"
 
 
 def app_version() -> str:
@@ -97,8 +104,6 @@ def build_exe(onedir: bool) -> Path:
     import PyInstaller.__main__
 
     BUILD.mkdir(exist_ok=True)
-    version_file = BUILD / "version_info.txt"
-    write_version_file(version_file, app_version())
     sep = os.pathsep
     args = [
         str(ROOT / "app.py"),
@@ -106,8 +111,12 @@ def build_exe(onedir: bool) -> Path:
         "--onedir" if onedir else "--onefile",
         "--console",  # the window shows the address; closing it quits the app
         "--noconfirm", "--clean",
-        "--icon", str(ROOT / "packaging" / "app.ico"),
-        "--version-file", str(version_file),
+    ]
+    if WINDOWS:  # the pumpkin icon and the Details tab only apply to an EXE
+        version_file = BUILD / "version_info.txt"
+        write_version_file(version_file, app_version())
+        args += ["--icon", str(ROOT / "packaging" / "app.ico"), "--version-file", str(version_file)]
+    args += [
         "--add-data", f"{ROOT / 'templates'}{sep}templates",
         "--add-data", f"{ROOT / 'static'}{sep}static",
         "--exclude-module", "tkinter",
@@ -118,19 +127,23 @@ def build_exe(onedir: bool) -> Path:
     if (SNAPSHOT / "model.json.gz").exists():
         args += ["--add-data", f"{SNAPSHOT}{sep}snapshot"]
     else:
-        print("No snapshot folder: the EXE will need internet on its first run.")
+        print("No snapshot folder: the app will need internet on its first run.")
     PyInstaller.__main__.run(args)
-    out = ROOT / "dist" / (NAME if onedir else f"{NAME}.exe")
+    out = ROOT / "dist" / (NAME if onedir or not WINDOWS else f"{NAME}.exe")
     print(f"\nBuilt {out}")
     return out
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Build ZhiaLianQuestBrowser.exe")
+    ap = argparse.ArgumentParser(description="Build the standalone Zhia Lian Quest Browser")
     ap.add_argument("--no-snapshot", action="store_true", help="don't bundle game data and icons")
     ap.add_argument("--keep-snapshot", action="store_true", help="reuse the existing snapshot/ folder")
-    ap.add_argument("--onedir", action="store_true", help="build a folder instead of one EXE (starts faster)")
+    ap.add_argument("--onedir", action="store_true", help="build a folder instead of one file (starts faster)")
+    ap.add_argument("--print-version", action="store_true", help="print the app version and stop")
     args = ap.parse_args()
+    if args.print_version:
+        print(app_version())
+        return
     if args.no_snapshot:
         shutil.rmtree(SNAPSHOT, ignore_errors=True)
     elif not (args.keep_snapshot and (SNAPSHOT / "model.json.gz").exists()):

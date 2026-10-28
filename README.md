@@ -78,6 +78,14 @@ files that are Project Gorgon player files. `ZHIA_REPORTS_DIR` adds another fold
 showing the addresses, and your browser opens the app. Close that window to quit.
 Nothing needs installing.
 
+**On a Mac:** download the zip for your Mac from the
+[Releases](../../releases) page (Apple Silicon or Intel), unzip it and double-click
+**ZhiaLianQuestBrowser**. It opens in a Terminal window and your browser opens the app;
+close the window or press Ctrl+C to quit. The first time, macOS blocks it because it
+isn't signed with a paid Apple developer account: open *System Settings → Privacy &
+Security* and click *Open Anyway*. The release notes walk through this. The Mac app keeps
+its data in `~/Library/Application Support/ZhiaLianQuestBrowser`.
+
 **From source** (any OS, Python 3.10 or newer):
 
 ```bash
@@ -130,22 +138,39 @@ Environment variables, all optional: `ZHIA_DATA_DIR` (data folder), `ZHIA_CHECK_
 (how often to look for new data, default 30), and `PORT`, `HOST` and `ZHIA_NO_BROWSER=1`,
 which the command-line options override.
 
-## Build the EXE yourself
+## Build it
 
-On Windows, with Python 3.10 to 3.13 from python.org installed:
+PyInstaller builds for the system it runs on, so the Windows EXE has to be built on
+Windows and the Mac app on a Mac. There are three ways.
+
+**On GitHub (all three at once).** Every push runs `.github/workflows/build.yml` on
+GitHub's own machines: a Mac with Apple Silicon, an Intel Mac and Windows. Each one
+builds the app with today's game data built in, then starts it and checks the page,
+the quest data, the icons, finding and watching a made-up player file, and the default
+port 80. The files then go into a **draft** release for the version in `app.py`, which
+only you can see until you publish it from the Releases page. A release that's already
+published is never changed. To run it without pushing anything: *Actions → Build apps
+→ Run workflow*.
+
+**On Windows**, with Python 3.10 to 3.13 from python.org installed:
 
 1. Double-click `build_exe.bat`. It makes a private virtual environment, installs Flask
    and PyInstaller into it, and runs `build.py`.
 2. Collect `dist\ZhiaLianQuestBrowser.exe` (about 15 MB). That one file is the whole app.
 
-`build.py` first snapshots the current game data and the icons the app uses (about
-700 KB) into `snapshot\`, then has PyInstaller bundle Python, the code, the page, the
-fonts and the snapshot into one EXE. Options:
+**On a Mac**, with Python 3.10 to 3.13 from python.org installed: double-click
+`build_mac.command` (or run it in Terminal), then collect `dist/ZhiaLianQuestBrowser`.
+It builds for the kind of Mac you run it on; an Intel build also runs on Apple Silicon
+through Rosetta. A Mac app you build yourself opens without the Privacy & Security step.
 
-- `build_exe.bat --onedir` builds a folder instead of a single file. It starts faster,
-  because a single-file EXE unpacks itself to a temporary folder on every launch.
-- `build_exe.bat --no-snapshot` leaves the game data out; the EXE then needs internet
-  the first time it runs.
+`build.py` first snapshots the current game data and the icons the app uses (about
+700 KB) into `snapshot/`, then has PyInstaller bundle Python, the code, the page, the
+fonts and the snapshot into one file. Options, for either script:
+
+- `--onedir` builds a folder instead of a single file. It starts faster, because a
+  single-file app unpacks itself to a temporary folder on every launch.
+- `--no-snapshot` leaves the game data out; the app then needs internet the first
+  time it runs.
 
 Rebuild after Project Gorgon updates if you want the built-in copy to stay current;
 the app downloads newer data by itself either way.
@@ -165,7 +190,8 @@ antivirus tools also flag PyInstaller apps by mistake. Building it yourself with
 | `app.py` | Flask app and launcher. Serves the page, `/api/event` (gzip, ETag from a hash of the content), `/api/refresh`, `/api/status`, `/api/player…` and `/icon/N.png`; picks live, cached or snapshot data; reads the command-line options; opens the browser. |
 | `player.py` | Finds and watches the player file: looks in the Reports folders, checks it every 15 seconds, keeps a small summary (favour, export time, quest names). |
 | `static/`, `templates/` | The front end, plain JavaScript with no build step. Fonts are bundled in `static/fonts` (SIL Open Font License). |
-| `build.py`, `build_exe.bat`, `packaging/` | The Windows EXE build: data snapshot, PyInstaller settings, app icon. |
+| `build.py`, `build_exe.bat`, `build_mac.command` | The standalone build for Windows or a Mac: data snapshot and PyInstaller settings. |
+| `.github/workflows/build.yml`, `packaging/` | The GitHub build: the three build machines, the test it runs on each (`ci_smoke_test.py`), the release notes, and the app icon. |
 
 **Which quests count.** Every quest whose internal name starts with `Event_Halloween`
 or that is tied to the `HalloweenQuests` rule (110 in v487), plus the three

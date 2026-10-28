@@ -64,7 +64,9 @@ def report_folders() -> list[Path]:
         found += [low / game if low else None, profile / "AppData" / "LocalLow" / game,
                   (docs or profile / "Documents") / "Project Gorgon Data" / "Reports"]
     elif sys.platform == "darwin":
-        found += [home / "Library" / "Application Support" / game,
+        support = home / "Library" / "Application Support"
+        found += [support / game,
+                  support / "unity.Elder Game.Project Gorgon" / "Reports",  # older Unity naming
                   home / "Documents" / "Project Gorgon Data" / "Reports"]
     else:
         found += [home / ".config" / "unity3d" / game,
